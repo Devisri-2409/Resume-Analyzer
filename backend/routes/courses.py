@@ -231,6 +231,11 @@ def get_course_details(
         else 0
     )
 
+    final_progress = computed_progress
+    if current_user and enrollment:
+        from services.learning_service import calculate_and_update_course_progress
+        final_progress = calculate_and_update_course_progress(current_user.id, course.id, db)
+
     return {
         "id": course.id,
         "title": course.title,
@@ -241,7 +246,7 @@ def get_course_details(
         "skills_covered": skills_list,
         "category": course.category,
         "is_enrolled": enrollment is not None,
-        "progress_percentage": enrollment.progress_percentage if enrollment else computed_progress,
+        "progress_percentage": final_progress,
         "total_lessons": total_course_lessons,
         "completed_lessons": completed_course_lessons,
         "modules": modules_data,
@@ -267,11 +272,20 @@ def enroll_course(
         )
         .first()
     )
+    from services.learning_service import (
+        calculate_and_update_course_progress,
+        record_learning_activity,
+        calculate_user_streak,
+    )
+
     if existing:
+        progress = calculate_and_update_course_progress(current_user.id, course.id, db)
+        streak_info = calculate_user_streak(current_user.id, db)
         return {
             "message": "Already enrolled.",
             "course_id": course.id,
-            "progress_percentage": existing.progress_percentage,
+            "progress_percentage": progress,
+            "learning_streak": streak_info["current_streak"],
         }
 
     enrollment = CourseEnrollment(
@@ -282,9 +296,22 @@ def enroll_course(
     db.add(enrollment)
     db.commit()
 
+    progress = calculate_and_update_course_progress(current_user.id, course.id, db)
+
+    # Record qualifying learning activity for streak
+    record_learning_activity(
+        user_id=current_user.id,
+        activity_type="course_enrollment",
+        db=db,
+        metadata={"course_id": course.id, "title": course.title},
+    )
+
+    streak_info = calculate_user_streak(current_user.id, db)
+
     return {
         "message": f"Successfully enrolled in {course.title}!",
         "course_id": course.id,
-        "progress_percentage": 0,
+        "progress_percentage": progress,
+        "learning_streak": streak_info["current_streak"],
     }
 

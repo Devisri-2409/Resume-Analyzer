@@ -53,3 +53,16 @@ class SkillAddRequest(BaseModel):
 class QuizSubmitRequest(BaseModel):
     answers: Dict[int, int]  # question_id -> option_id
 
+
+class EmailVerifyRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=255)
+
+
+class PhoneSendOtpRequest(BaseModel):
+    phone_number: str = Field(min_length=7, max_length=50)
+
+
+class PhoneVerifyOtpRequest(BaseModel):
+    phone_number: str = Field(min_length=7, max_length=50)
+    otp: str = Field(min_length=4, max_length=10)
+

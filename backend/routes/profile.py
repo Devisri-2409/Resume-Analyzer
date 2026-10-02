@@ -24,6 +24,7 @@ from schemas import (
     CertificationCreateRequest,
     SkillAddRequest,
 )
+from services.learning_service import calculate_user_streak
 
 router = APIRouter(prefix="/api/profile", tags=["Profile"])
 
@@ -35,7 +36,12 @@ def get_user_learning_stats(user_id: int, db: Session) -> dict:
         .filter(CourseEnrollment.user_id == user_id, CourseEnrollment.progress_percentage >= 100)
         .count()
     )
-    quizzes_count = db.query(QuizAttempt).filter(QuizAttempt.user_id == user_id).count()
+    quizzes_count = (
+        db.query(QuizAttempt.quiz_id)
+        .filter(QuizAttempt.user_id == user_id, QuizAttempt.passed.is_(True))
+        .distinct()
+        .count()
+    )
     avg_score_res = (
         db.query(func.avg(QuizAttempt.percentage))
         .filter(QuizAttempt.user_id == user_id)
@@ -45,15 +51,8 @@ def get_user_learning_stats(user_id: int, db: Session) -> dict:
 
     skills_count = db.query(UserSkill).filter(UserSkill.user_id == user_id).count()
 
-    # Calculate streak based on recent activity days
-    recent_progress = (
-        db.query(LessonProgress.completed_at)
-        .filter(LessonProgress.user_id == user_id)
-        .order_by(LessonProgress.completed_at.desc())
-        .limit(10)
-        .all()
-    )
-    streak = 1 if len(recent_progress) > 0 else 0
+    # Calculate actual consecutive calendar-day streak
+    streak_info = calculate_user_streak(user_id, db)
 
     return {
         "courses_enrolled": enrolled_count,
@@ -61,7 +60,9 @@ def get_user_learning_stats(user_id: int, db: Session) -> dict:
         "quizzes_completed": quizzes_count,
         "average_quiz_score": avg_score,
         "skills_learned": skills_count,
-        "learning_streak": streak,
+        "learning_streak": streak_info["current_streak"],
+        "longest_streak": streak_info["longest_streak"],
+        "active_days": streak_info["active_days"],
     }
 
 
@@ -109,8 +110,10 @@ def get_profile(
             "full_name": current_user.full_name,
             "email": current_user.email,
             "role": current_user.role,
+            "is_email_verified": bool(current_user.is_email_verified),
+            "is_phone_verified": bool(current_user.is_phone_verified),
             "avatar": profile.avatar or "avatar-1",
-            "phone": profile.phone or "",
+            "phone": profile.phone or current_user.phone_number or "",
             "location": profile.location or "",
             "github": profile.github or "",
             "linkedin": profile.linkedin or "",
@@ -170,7 +173,14 @@ def update_profile(
     if payload.avatar is not None:
         profile.avatar = payload.avatar
     if payload.phone is not None:
-        profile.phone = payload.phone.strip()
+        new_phone = payload.phone.strip()
+        # If user changes phone, require re-verification
+        if new_phone != (profile.phone or ""):
+            profile.phone = new_phone
+            current_user.phone_number = new_phone
+            current_user.is_phone_verified = False
+            current_user.phone_otp_hash = None
+            current_user.phone_otp_expires_at = None
     if payload.location is not None:
         profile.location = payload.location.strip()
     if payload.github is not None:

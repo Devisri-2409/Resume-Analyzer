@@ -88,6 +88,13 @@ def get_lesson(
     }
 
 
+from services.learning_service import (
+    record_learning_activity,
+    calculate_and_update_course_progress,
+    calculate_user_streak,
+)
+
+
 @router.post("/{lesson_id}/complete")
 def complete_lesson(
     lesson_id: int,
@@ -108,38 +115,35 @@ def complete_lesson(
         .first()
     )
 
+    now = datetime.now(timezone.utc)
     if not progress:
         progress = LessonProgress(
             user_id=current_user.id,
             course_id=lesson.course_id,
             lesson_id=lesson.id,
             completed=True,
-            completed_at=datetime.now(timezone.utc),
+            completed_at=now,
         )
         db.add(progress)
     else:
         progress.completed = True
-        progress.completed_at = datetime.now(timezone.utc)
+        progress.completed_at = now
 
-    # Ensure enrollment exists
-    enrollment = (
-        db.query(CourseEnrollment)
-        .filter(
-            CourseEnrollment.user_id == current_user.id,
-            CourseEnrollment.course_id == lesson.course_id,
-        )
-        .first()
+    db.commit()
+
+    # Calculate actual course progress including lessons and quizzes
+    course_progress = calculate_and_update_course_progress(current_user.id, lesson.course_id, db)
+
+    # Record qualifying learning activity for streak
+    record_learning_activity(
+        user_id=current_user.id,
+        activity_type="lesson_completion",
+        db=db,
+        metadata={"lesson_id": lesson.id, "course_id": lesson.course_id, "title": lesson.title},
     )
-    if not enrollment:
-        enrollment = CourseEnrollment(
-            user_id=current_user.id,
-            course_id=lesson.course_id,
-            progress_percentage=0,
-        )
-        db.add(enrollment)
-        db.flush()
 
-    # Recalculate course progress
+    streak_info = calculate_user_streak(current_user.id, db)
+
     total_lessons = db.query(Lesson).filter(Lesson.course_id == lesson.course_id).count()
     completed_lessons = (
         db.query(LessonProgress)
@@ -151,22 +155,14 @@ def complete_lesson(
         .count()
     )
 
-    progress_percentage = (
-        round((completed_lessons / total_lessons) * 100) if total_lessons > 0 else 0
-    )
-    enrollment.progress_percentage = min(100, progress_percentage)
-    if enrollment.progress_percentage >= 100 and not enrollment.completed_at:
-        enrollment.completed_at = datetime.now(timezone.utc)
-
-    db.commit()
-
     return {
         "message": "Lesson completed successfully!",
         "lesson_id": lesson.id,
         "is_completed": True,
         "course_id": lesson.course_id,
-        "course_progress": enrollment.progress_percentage,
+        "course_progress": course_progress,
         "completed_lessons": completed_lessons,
         "total_lessons": total_lessons,
+        "learning_streak": streak_info["current_streak"],
     }
 

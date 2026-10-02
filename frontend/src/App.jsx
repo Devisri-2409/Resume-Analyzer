@@ -419,6 +419,28 @@ function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname || "/dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState({ message: "", type: "success" });
+  const [streak, setStreak] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const fetchStreak = () => {
+    const token = getToken();
+    if (!token) return;
+    axios
+      .get(`${API_URL}/api/learning/streak`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => {
+        setStreak(res.data.current_streak || 0);
+      })
+      .catch((err) => {
+        console.error("Streak fetch error:", err);
+      });
+  };
+
+  const handleActivityCompleted = () => {
+    fetchStreak();
+    setRefreshKey((k) => k + 1);
+  };
 
   const navigate = (path) => {
     window.history.pushState({}, "", path);
@@ -434,8 +456,29 @@ function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  // Handle email verification token in URL query params if clicked from email
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const verifyToken = params.get("verify_email_token") || params.get("token");
+    if (verifyToken) {
+      axios
+        .post(`${API_URL}/api/auth/email/verify`, { token: verifyToken })
+        .then((res) => {
+          showToast(res.data.message || "Email address verified successfully!", "success");
+          setUser((prev) => (prev ? { ...prev, is_email_verified: true } : prev));
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        })
+        .catch((err) => {
+          const msg = err?.response?.data?.detail || "Email verification failed or link expired.";
+          showToast(msg, "error");
+        });
+    }
+  }, []);
+
   const handleAuthenticated = (authenticatedUser) => {
     setUser(authenticatedUser);
+    fetchStreak();
     const dest = authenticatedUser.role === "admin" ? "/admin/dashboard" : "/dashboard";
     navigate(dest);
   };
@@ -453,6 +496,7 @@ function App() {
       })
       .then((response) => {
         setUser(response.data);
+        fetchStreak();
         if (window.location.pathname === "/" || window.location.pathname === "/login") {
           navigate(response.data.role === "admin" ? "/admin/dashboard" : "/dashboard");
         }
@@ -556,7 +600,7 @@ function App() {
           pageSubtitle={pageInfo.subtitle}
           onOpenSidebar={() => setSidebarOpen(true)}
           onNavigate={navigate}
-          streak={1}
+          streak={streak}
         />
 
         <main className="app-content-body">
@@ -567,6 +611,8 @@ function App() {
               apiUrl={API_URL}
               token={getToken()}
               showToast={showToast}
+              refreshKey={refreshKey}
+              onActivityCompleted={handleActivityCompleted}
             />
           )}
 
@@ -577,6 +623,7 @@ function App() {
               onNavigate={navigate}
               showToast={showToast}
               onLogout={logout}
+              onActivityCompleted={handleActivityCompleted}
             />
           )}
 
@@ -596,6 +643,7 @@ function App() {
               token={getToken()}
               onNavigate={navigate}
               showToast={showToast}
+              onActivityCompleted={handleActivityCompleted}
             />
           )}
 
@@ -607,6 +655,7 @@ function App() {
               token={getToken()}
               onNavigate={navigate}
               showToast={showToast}
+              onActivityCompleted={handleActivityCompleted}
             />
           )}
 
@@ -618,6 +667,7 @@ function App() {
               token={getToken()}
               onNavigate={navigate}
               showToast={showToast}
+              onActivityCompleted={handleActivityCompleted}
             />
           )}
 
@@ -627,6 +677,8 @@ function App() {
               token={getToken()}
               onNavigate={navigate}
               showToast={showToast}
+              refreshKey={refreshKey}
+              onActivityCompleted={handleActivityCompleted}
             />
           )}
 

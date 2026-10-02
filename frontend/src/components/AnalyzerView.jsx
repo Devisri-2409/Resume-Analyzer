@@ -3,7 +3,7 @@ import axios from "axios";
 import { ScoreRing } from "./ScoreRing";
 import { ClockIcon, DownloadIcon } from "./Icons";
 
-export function AnalyzerView({ apiUrl, token, onNavigate, showToast, onLogout }) {
+export function AnalyzerView({ apiUrl, token, onNavigate, showToast, onLogout, onActivityCompleted }) {
   const [resume, setResume] = useState(null);
   const [jobDescription, setJobDescription] = useState("");
   const [result, setResult] = useState(null);
@@ -44,6 +44,9 @@ export function AnalyzerView({ apiUrl, token, onNavigate, showToast, onLogout })
       setResult(response.data);
       if (showToast) {
         showToast("Resume analyzed successfully! Skill gaps and course recommendations updated.", "success");
+      }
+      if (onActivityCompleted) {
+        onActivityCompleted(response.data);
       }
     } catch (err) {
       if (err?.response?.status === 401) {

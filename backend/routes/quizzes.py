@@ -208,6 +208,36 @@ def submit_quiz(
     db.commit()
     db.refresh(attempt)
 
+    # Recalculate accurate course progress with the new quiz attempt
+    from services.learning_service import (
+        calculate_and_update_course_progress,
+        award_course_skills_if_passed,
+        record_learning_activity,
+        calculate_user_streak,
+    )
+    course_progress = calculate_and_update_course_progress(current_user.id, quiz.course_id, db)
+
+    # If the user passed the quiz, automatically award the skills covered in the course
+    awarded_skills = []
+    if passed:
+        awarded_skills = award_course_skills_if_passed(current_user.id, quiz.course_id, db)
+
+    # Record qualifying learning activity for streak
+    record_learning_activity(
+        user_id=current_user.id,
+        activity_type="quiz_attempt",
+        db=db,
+        metadata={
+            "quiz_id": quiz.id,
+            "course_id": quiz.course_id,
+            "score": correct_count,
+            "percentage": percentage,
+            "passed": passed,
+        },
+    )
+
+    streak_info = calculate_user_streak(current_user.id, db)
+
     return {
         "attempt_id": attempt.id,
         "score": correct_count,
@@ -217,6 +247,9 @@ def submit_quiz(
         "correct_count": correct_count,
         "incorrect_count": incorrect_count,
         "passing_score": quiz.passing_score,
+        "course_progress": course_progress,
+        "learning_streak": streak_info["current_streak"],
+        "awarded_skills": awarded_skills,
         "breakdown": breakdown,
     }
 

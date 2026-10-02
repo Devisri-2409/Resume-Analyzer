@@ -124,9 +124,22 @@ async def analyze_resume(
         db.commit()
         db.refresh(analysis)
 
-        course_recs = find_courses_for_missing_skills(
-            job_match_result["missing_skills"], db, limit=4
+        from services.learning_service import (
+            record_learning_activity,
+            calculate_user_streak,
+            find_skill_recommendations,
         )
+
+        # Record qualifying learning activity for streak
+        record_learning_activity(
+            user_id=current_user.id,
+            activity_type="resume_analysis",
+            db=db,
+            metadata={"analysis_id": analysis.id, "ats_score": ats_score, "filename": file.filename},
+        )
+        streak_info = calculate_user_streak(current_user.id, db)
+
+        course_recs = find_skill_recommendations(current_user.id, db, limit=4)
 
         return {
             "analysis_id": analysis.id,
@@ -138,6 +151,7 @@ async def analyze_resume(
             "job_match": job_match_result,
             "ai_suggestions": ai_suggestions,
             "recommended_courses": course_recs,
+            "learning_streak": streak_info["current_streak"],
         }
 
     except HTTPException:
@@ -161,10 +175,7 @@ def get_resume_history(
 ):
     analyses = (
         db.query(ResumeAnalysis)
-        .filter(
-            (ResumeAnalysis.user_id == current_user.id)
-            | (ResumeAnalysis.user_id.is_(None))
-        )
+        .filter(ResumeAnalysis.user_id == current_user.id)
         .order_by(desc(ResumeAnalysis.created_at))
         .limit(20)
         .all()
@@ -192,12 +203,11 @@ def get_latest_resume_analysis(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    from services.learning_service import find_skill_recommendations
+
     analysis = (
         db.query(ResumeAnalysis)
-        .filter(
-            (ResumeAnalysis.user_id == current_user.id)
-            | (ResumeAnalysis.user_id.is_(None))
-        )
+        .filter(ResumeAnalysis.user_id == current_user.id)
         .order_by(desc(ResumeAnalysis.created_at))
         .first()
     )
@@ -206,7 +216,7 @@ def get_latest_resume_analysis(
         return {"latest": None}
 
     missing_skills = json.loads(analysis.missing_skills) if analysis.missing_skills else []
-    course_recs = find_courses_for_missing_skills(missing_skills, db, limit=4)
+    course_recs = find_skill_recommendations(current_user.id, db, limit=4)
 
     return {
         "latest": {

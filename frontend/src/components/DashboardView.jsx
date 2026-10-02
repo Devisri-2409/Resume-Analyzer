@@ -3,7 +3,7 @@ import axios from "axios";
 import { ScoreRing } from "./ScoreRing";
 import { ArrowRightIcon, BookOpenIcon, CheckCircleIcon, ClockIcon, FireIcon, ResumeIcon } from "./Icons";
 
-export function DashboardView({ user, onNavigate, apiUrl, token, showToast }) {
+export function DashboardView({ user, onNavigate, apiUrl, token, showToast, refreshKey, onActivityCompleted }) {
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState(null);
   const [latestResume, setLatestResume] = useState(null);
@@ -11,7 +11,7 @@ export function DashboardView({ user, onNavigate, apiUrl, token, showToast }) {
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [refreshKey]);
 
   const fetchDashboardData = async () => {
     setLoading(true);

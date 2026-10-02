@@ -3,13 +3,13 @@ import axios from "axios";
 import { ScoreRing } from "./ScoreRing";
 import { AwardIcon, BookOpenIcon, ClockIcon, FireIcon } from "./Icons";
 
-export function LearningView({ apiUrl, token, onNavigate, showToast }) {
+export function LearningView({ apiUrl, token, onNavigate, showToast, refreshKey, onActivityCompleted }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchLearningDashboard();
-  }, []);
+  }, [refreshKey]);
 
   const fetchLearningDashboard = async () => {
     setLoading(true);
@@ -121,6 +121,33 @@ export function LearningView({ apiUrl, token, onNavigate, showToast }) {
           </div>
           <p className="card-hint">
             Quizzes validate your skills and demonstrate competence on your ResumeAI profile.
+          </p>
+        </div>
+
+        {/* Learning Streak Card */}
+        <div className="learning-hero-card streak-hero">
+          <div className="card-top-icon">
+            <FireIcon size={24} className="streak-flame" />
+          </div>
+          <span className="mini-label">ACTIVE LEARNING STREAK</span>
+          <div className="quiz-stats-row">
+            <div className="q-stat">
+              <span>Current Streak</span>
+              <strong style={{ color: "#ea580c" }}>{data?.learning_streak || 0} {data?.learning_streak === 1 ? "Day" : "Days"}</strong>
+            </div>
+            <div className="q-stat">
+              <span>Longest Streak</span>
+              <strong>{data?.longest_streak || 0} Days</strong>
+            </div>
+            <div className="q-stat">
+              <span>Active Days</span>
+              <strong>{data?.active_days || 0}</strong>
+            </div>
+          </div>
+          <p className="card-hint">
+            {data?.today_active
+              ? "Great job! You have logged qualifying activity today."
+              : "Complete a lesson, quiz, or resume analysis to keep your streak going!"}
           </p>
         </div>
       </div>

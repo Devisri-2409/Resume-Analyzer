@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { ArrowLeftIcon, ArrowRightIcon, AwardIcon, CheckCircleIcon } from "./Icons";
 
-export function QuizView({ courseId, quizId, apiUrl, token, onNavigate, showToast }) {
+export function QuizView({ courseId, quizId, apiUrl, token, onNavigate, showToast, onActivityCompleted }) {
   const [quiz, setQuiz] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -60,6 +60,9 @@ export function QuizView({ courseId, quizId, apiUrl, token, onNavigate, showToas
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setResult(res.data);
+      if (onActivityCompleted) {
+        onActivityCompleted(res.data);
+      }
       if (showToast) {
         if (res.data.passed) {
           showToast(`Congratulations! You passed with ${res.data.percentage}%!`, "success");

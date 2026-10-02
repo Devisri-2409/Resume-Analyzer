@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -16,6 +16,19 @@ class User(Base):
     role = Column(String(20), nullable=False, default="user", server_default="user")
     created_at = Column(DateTime, server_default=func.now())
 
+    # Email & Phone Verification
+    is_email_verified = Column(Boolean, default=False, nullable=False, server_default="false")
+    email_verification_token = Column(String(255), nullable=True, index=True)
+    email_verification_expires_at = Column(DateTime, nullable=True)
+    email_verification_sent_at = Column(DateTime, nullable=True)
+
+    phone_number = Column(String(50), nullable=True)
+    is_phone_verified = Column(Boolean, default=False, nullable=False, server_default="false")
+    phone_otp_hash = Column(String(255), nullable=True)
+    phone_otp_expires_at = Column(DateTime, nullable=True)
+    phone_otp_sent_at = Column(DateTime, nullable=True)
+    phone_otp_attempts = Column(Integer, default=0, nullable=False, server_default="0")
+
     profile = relationship("Profile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     educations = relationship("UserEducation", back_populates="user", cascade="all, delete-orphan")
     skills = relationship("UserSkill", back_populates="user", cascade="all, delete-orphan")
@@ -25,6 +38,7 @@ class User(Base):
     lesson_progress = relationship("LessonProgress", back_populates="user", cascade="all, delete-orphan")
     quiz_attempts = relationship("QuizAttempt", back_populates="user", cascade="all, delete-orphan")
     analyses = relationship("ResumeAnalysis", back_populates="user")
+    activities = relationship("LearningActivity", back_populates="user", cascade="all, delete-orphan")
 
 
 class ResumeAnalysis(Base):
@@ -255,4 +269,17 @@ class CourseEnrollment(Base):
     user = relationship("User", back_populates="enrollments")
     course = relationship("Course", back_populates="enrollments")
     __table_args__ = (UniqueConstraint("user_id", "course_id", name="uq_user_course"),)
+
+
+class LearningActivity(Base):
+    __tablename__ = "learning_activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    activity_type = Column(String(50), nullable=False)  # lesson_completion, quiz_attempt, course_enrollment, resume_analysis
+    activity_date = Column(Date, nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    metadata_json = Column(Text, default="{}")
+
+    user = relationship("User", back_populates="activities")
 

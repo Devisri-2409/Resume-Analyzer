@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { ArrowLeftIcon, ArrowRightIcon, CheckCircleIcon, ClockIcon } from "./Icons";
 
-export function LessonView({ courseId, lessonId, apiUrl, token, onNavigate, showToast }) {
+export function LessonView({ courseId, lessonId, apiUrl, token, onNavigate, showToast, onActivityCompleted }) {
   const [lesson, setLesson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [marking, setMarking] = useState(false);
@@ -40,6 +40,9 @@ export function LessonView({ courseId, lessonId, apiUrl, token, onNavigate, show
       setLesson((prev) => ({ ...prev, is_completed: true }));
       if (showToast) {
         showToast(`Lesson completed! Course progress: ${res.data.course_progress}%`, "success");
+      }
+      if (onActivityCompleted) {
+        onActivityCompleted(res.data);
       }
     } catch (err) {
       console.error("Complete lesson error:", err);

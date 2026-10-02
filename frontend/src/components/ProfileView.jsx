@@ -31,6 +31,36 @@ export function ProfileView({ apiUrl, token, onNavigate, showToast, onUserUpdate
 
   const [newSkillInput, setNewSkillInput] = useState("");
 
+  // Email verification state
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailTokenInput, setEmailTokenInput] = useState("");
+  const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [emailCooldown, setEmailCooldown] = useState(0);
+
+  // Phone verification state
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneOtpInput, setPhoneOtpInput] = useState("");
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [phoneError, setPhoneError] = useState("");
+  const [phoneCooldown, setPhoneCooldown] = useState(0);
+  const [attemptsRemaining, setAttemptsRemaining] = useState(5);
+
+  // Cooldown timers
+  useEffect(() => {
+    if (emailCooldown <= 0) return;
+    const timer = setInterval(() => setEmailCooldown((prev) => prev - 1), 1000);
+    return () => clearInterval(timer);
+  }, [emailCooldown]);
+
+  useEffect(() => {
+    if (phoneCooldown <= 0) return;
+    const timer = setInterval(() => setPhoneCooldown((prev) => prev - 1), 1000);
+    return () => clearInterval(timer);
+  }, [phoneCooldown]);
+
   useEffect(() => {
     fetchProfile();
   }, []);
@@ -76,6 +106,117 @@ export function ProfileView({ apiUrl, token, onNavigate, showToast, onUserUpdate
       if (showToast) showToast("Failed to save personal profile.", "error");
     } finally {
       setSavingPersonal(false);
+    }
+  };
+
+  const handleSendEmailVerification = async () => {
+    if (sendingEmail || emailCooldown > 0) return;
+    setSendingEmail(true);
+    setEmailError("");
+    try {
+      const res = await axios.post(
+        `${apiUrl}/api/auth/email/send-verification`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setEmailCooldown(60);
+      if (showToast) showToast(res.data.message || "Verification email sent! Check your inbox.", "success");
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Failed to send verification email.";
+      setEmailError(msg);
+      if (showToast) showToast(msg, "error");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const handleVerifyEmailToken = async (e) => {
+    if (e) e.preventDefault();
+    if (!emailTokenInput.trim()) return;
+    setVerifyingEmail(true);
+    setEmailError("");
+    try {
+      await axios.post(
+        `${apiUrl}/api/auth/email/verify`,
+        { token: emailTokenInput.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (showToast) showToast("Email successfully verified!", "success");
+      setShowEmailModal(false);
+      setEmailTokenInput("");
+      setProfile((prev) => ({
+        ...prev,
+        personal_info: { ...prev?.personal_info, is_email_verified: true },
+      }));
+      if (onUserUpdated) onUserUpdated({ is_email_verified: true });
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Invalid or expired token.";
+      setEmailError(msg);
+      if (showToast) showToast(msg, "error");
+    } finally {
+      setVerifyingEmail(false);
+    }
+  };
+
+  const handleSendPhoneOtp = async () => {
+    const phoneNumber = personalForm.phone || profile?.personal_info?.phone;
+    if (!phoneNumber || phoneNumber.trim().length < 8) {
+      if (showToast) showToast("Please enter a valid phone number (at least 8 digits) first.", "error");
+      return;
+    }
+    if (sendingOtp || phoneCooldown > 0) return;
+    setSendingOtp(true);
+    setPhoneError("");
+    try {
+      const res = await axios.post(
+        `${apiUrl}/api/auth/phone/send-otp`,
+        { phone_number: phoneNumber.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setPhoneCooldown(60);
+      setAttemptsRemaining(5);
+      setShowPhoneModal(true);
+      if (showToast) showToast(res.data.message || "Verification code sent!", "success");
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Failed to send OTP code.";
+      setPhoneError(msg);
+      if (showToast) showToast(msg, "error");
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async (e) => {
+    if (e) e.preventDefault();
+    const phoneNumber = personalForm.phone || profile?.personal_info?.phone;
+    if (!phoneOtpInput.trim()) return;
+    setVerifyingOtp(true);
+    setPhoneError("");
+    try {
+      await axios.post(
+        `${apiUrl}/api/auth/phone/verify-otp`,
+        { phone_number: phoneNumber.trim(), otp: phoneOtpInput.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (showToast) showToast("Phone number verified successfully!", "success");
+      setShowPhoneModal(false);
+      setPhoneOtpInput("");
+      setProfile((prev) => ({
+        ...prev,
+        personal_info: {
+          ...prev?.personal_info,
+          phone: phoneNumber.trim(),
+          is_phone_verified: true,
+        },
+      }));
+      if (onUserUpdated) onUserUpdated({ is_phone_verified: true, phone_number: phoneNumber.trim() });
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Incorrect verification code.";
+      setPhoneError(msg);
+      setAttemptsRemaining((prev) => Math.max(0, prev - 1));
+      if (showToast) showToast(msg, "error");
+    } finally {
+      setVerifyingOtp(false);
     }
   };
 
@@ -262,8 +403,8 @@ export function ProfileView({ apiUrl, token, onNavigate, showToast, onUserUpdate
             <FireIcon size={20} />
           </div>
           <span className="stat-label">LEARNING STREAK</span>
-          <strong>{stats.learning_streak} Days</strong>
-          <small>Daily active streak</small>
+          <strong>{stats.learning_streak} {stats.learning_streak === 1 ? "Day" : "Days"}</strong>
+          <small>Longest streak: {stats.longest_streak ?? stats.learning_streak ?? 0} days</small>
         </div>
       </section>
 
@@ -291,27 +432,78 @@ export function ProfileView({ apiUrl, token, onNavigate, showToast, onUserUpdate
                     required
                   />
                 </label>
-                <label>
-                  Email address
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <label style={{ margin: 0 }}>Email address</label>
+                    {profile?.personal_info?.is_email_verified ? (
+                      <span className="verify-status-badge verified">
+                        <CheckCircleIcon size={12} /> Verified
+                      </span>
+                    ) : (
+                      <div className="verify-badge-group">
+                        <span className="verify-status-badge unverified">Unverified</span>
+                        <button
+                          type="button"
+                          className="verify-action-btn"
+                          onClick={handleSendEmailVerification}
+                          disabled={sendingEmail || emailCooldown > 0}
+                          title="Send verification email with token link"
+                        >
+                          {emailCooldown > 0 ? `Resend (${emailCooldown}s)` : "Send Verification"}
+                        </button>
+                        <button
+                          type="button"
+                          className="verify-action-btn subtle"
+                          onClick={() => {
+                            setEmailError("");
+                            setShowEmailModal(true);
+                          }}
+                          title="Enter verification token manually"
+                        >
+                          Token
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <input
                     type="email"
                     value={profile?.personal_info?.email || ""}
                     disabled
                     className="disabled-input"
                   />
-                </label>
+                </div>
               </div>
 
               <div className="form-row-two">
-                <label>
-                  Phone number
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <label style={{ margin: 0 }}>Phone number</label>
+                    {profile?.personal_info?.is_phone_verified ? (
+                      <span className="verify-status-badge verified">
+                        <CheckCircleIcon size={12} /> Verified
+                      </span>
+                    ) : (
+                      <div className="verify-badge-group">
+                        <span className="verify-status-badge unverified">Unverified</span>
+                        <button
+                          type="button"
+                          className="verify-action-btn"
+                          onClick={handleSendPhoneOtp}
+                          disabled={sendingOtp || phoneCooldown > 0}
+                          title="Send 6-digit verification code via SMS"
+                        >
+                          {phoneCooldown > 0 ? `Resend (${phoneCooldown}s)` : "Verify via SMS"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <input
                     type="text"
                     placeholder="+91 98765 43210"
                     value={personalForm.phone}
                     onChange={(e) => setPersonalForm({ ...personalForm, phone: e.target.value })}
                   />
-                </label>
+                </div>
                 <label>
                   Location
                   <input
@@ -789,6 +981,97 @@ export function ProfileView({ apiUrl, token, onNavigate, showToast, onUserUpdate
                 </button>
                 <button type="submit" className="primary-button">
                   Save Certification
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EMAIL VERIFICATION TOKEN MODAL */}
+      {showEmailModal && (
+        <div className="modal-backdrop" onClick={() => setShowEmailModal(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Verify Email Address</h3>
+              <button type="button" className="close-btn" onClick={() => setShowEmailModal(false)}>
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleVerifyEmailToken} className="modal-form">
+              <p className="modal-hint-text">
+                Enter the verification token sent to <strong>{profile?.personal_info?.email}</strong>.
+              </p>
+              <label>
+                Verification Token
+                <input
+                  type="text"
+                  placeholder="Paste verification token here..."
+                  value={emailTokenInput}
+                  onChange={(e) => setEmailTokenInput(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </label>
+              {emailError && <div className="modal-error-text">{emailError}</div>}
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setShowEmailModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="primary-button" disabled={verifyingEmail || !emailTokenInput.trim()}>
+                  {verifyingEmail ? "Verifying..." : "Confirm Verification"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PHONE OTP VERIFICATION MODAL */}
+      {showPhoneModal && (
+        <div className="modal-backdrop" onClick={() => setShowPhoneModal(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Verify Phone Number</h3>
+              <button type="button" className="close-btn" onClick={() => setShowPhoneModal(false)}>
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleVerifyPhoneOtp} className="modal-form">
+              <p className="modal-hint-text">
+                We sent a 6-digit verification code to <strong>{personalForm.phone || profile?.personal_info?.phone}</strong>. Code expires in 10 minutes.
+              </p>
+              <label>
+                6-Digit Security Code
+                <input
+                  type="text"
+                  maxLength={6}
+                  className="otp-box-input"
+                  placeholder="123456"
+                  value={phoneOtpInput}
+                  onChange={(e) => setPhoneOtpInput(e.target.value.replace(/\D/g, ""))}
+                  required
+                  autoFocus
+                />
+              </label>
+              {phoneError && <div className="modal-error-text">{phoneError}</div>}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", color: "#64748b", margin: "8px 0" }}>
+                <span>{attemptsRemaining} attempt{attemptsRemaining === 1 ? "" : "s"} remaining</span>
+                <button
+                  type="button"
+                  className="verify-action-btn"
+                  onClick={handleSendPhoneOtp}
+                  disabled={sendingOtp || phoneCooldown > 0}
+                >
+                  {phoneCooldown > 0 ? `Resend code in ${phoneCooldown}s` : "Resend code"}
+                </button>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setShowPhoneModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="primary-button" disabled={verifyingOtp || phoneOtpInput.length < 6}>
+                  {verifyingOtp ? "Verifying..." : "Verify OTP"}
                 </button>
               </div>
             </form>

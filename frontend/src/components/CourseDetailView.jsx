@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { ArrowLeftIcon, AwardIcon, BookOpenIcon, CheckCircleIcon, ClockIcon } from "./Icons";
 
-export function CourseDetailView({ courseId, apiUrl, token, onNavigate, showToast }) {
+export function CourseDetailView({ courseId, apiUrl, token, onNavigate, showToast, onActivityCompleted }) {
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [enrolling, setEnrolling] = useState(false);
@@ -37,6 +37,9 @@ export function CourseDetailView({ courseId, apiUrl, token, onNavigate, showToas
       );
       if (showToast) {
         showToast(`Enrolled in "${course.title}"!`, "success");
+      }
+      if (onActivityCompleted) {
+        onActivityCompleted();
       }
       fetchCourseDetail();
     } catch (err) {
