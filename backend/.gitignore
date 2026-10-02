@@ -1,0 +1,28 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Uploaded resumes (preserve folder structure via .gitkeep)
+uploads/*
+!uploads/.gitkeep
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Build
+frontend/dist/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
