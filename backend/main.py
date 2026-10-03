@@ -21,6 +21,21 @@ async def lifespan(app: FastAPI):
         Base.metadata.create_all(bind=engine)
     except Exception as e:
         print(f"Database connection note: {e}")
+
+    # Initialize administrator from environment if configured
+    try:
+        from database import SessionLocal
+        from services.admin_service import init_admin_from_env
+        db = SessionLocal()
+        try:
+            admin_user = init_admin_from_env(db)
+            if admin_user:
+                print(f"[STARTUP] Admin account verified/initialized: {admin_user.email}")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[STARTUP] Admin initialization note: {e}")
+
     yield
 
 

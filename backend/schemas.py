@@ -13,6 +13,12 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class AdminInitRequest(BaseModel):
+    full_name: str = Field(default="Platform Administrator", min_length=2, max_length=120)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+
+
 class ProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = None
     avatar: Optional[str] = None

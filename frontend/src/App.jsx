@@ -16,6 +16,19 @@ import { LearningView } from "./components/LearningView";
 import { ProfileView } from "./components/ProfileView";
 import { ReportsView } from "./components/ReportsView";
 
+// Admin Sub-Views
+import {
+  AdminDashboardOverview,
+  AdminUsersView,
+  AdminPerformanceView,
+  AdminCoursesView,
+  AdminLearningPathsView,
+  AdminTestsView,
+  AdminQuestionsView,
+  AdminBadgesView,
+  AdminReportsView,
+} from "./components/admin/AdminViews";
+
 const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 function getToken() {
@@ -33,6 +46,24 @@ function parseRoute(path) {
   if (path === "/learning") return { page: "learning" };
   if (path === "/profile") return { page: "profile" };
   if (path === "/reports") return { page: "reports" };
+
+  // Admin routing
+  if (path.startsWith("/admin")) {
+    const sub = path.replace(/^\/admin\/?/, "");
+    const validSections = [
+      "dashboard",
+      "users",
+      "performance",
+      "courses",
+      "learning-paths",
+      "tests",
+      "questions",
+      "badges",
+      "reports",
+    ];
+    const section = validSections.includes(sub) ? sub : "dashboard";
+    return { page: "admin", section };
+  }
 
   const lessonMatch = path.match(/^\/courses\/(\d+)\/lessons\/(\d+)/);
   if (lessonMatch) {
@@ -59,9 +90,19 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [adminStatus, setAdminStatus] = useState(null);
 
   const isRegister = mode === "register";
   const isAdminLogin = mode === "admin-login";
+
+  useEffect(() => {
+    if (isAdminLogin) {
+      axios
+        .get(`${API_URL}/api/auth/admin/status`)
+        .then((res) => setAdminStatus(res.data))
+        .catch(() => setAdminStatus(null));
+    }
+  }, [isAdminLogin]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -92,7 +133,17 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }) {
       localStorage.setItem("resume_analyzer_token", response.data.access_token);
       onAuthenticated(response.data.user);
     } catch (err) {
-      setError(apiError(err, "Unable to complete the request."));
+      const statusCode = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (statusCode === 403 && isAdminLogin) {
+        setError(detail || "Admin access required. This account does not possess administrator privileges.");
+      } else if (statusCode === 401) {
+        setError(isAdminLogin ? "Invalid administrator credentials. Please check your email and password." : "Invalid email or password.");
+      } else if (statusCode >= 500) {
+        setError("Server error during authentication. Please verify the backend service is running.");
+      } else {
+        setError(apiError(err, "Unable to complete the request."));
+      }
     } finally {
       setLoading(false);
     }
@@ -162,6 +213,23 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }) {
                   : "Continue your career & learning journey."}
             </p>
           </div>
+
+          {isAdminLogin && adminStatus && !adminStatus.has_admin && (
+            <div
+              style={{
+                background: "rgba(245, 158, 11, 0.12)",
+                border: "1px solid rgba(245, 158, 11, 0.3)",
+                borderRadius: "10px",
+                padding: "10px 14px",
+                marginBottom: "16px",
+                fontSize: "0.82rem",
+                color: "#d97706",
+                lineHeight: "1.4",
+              }}
+            >
+              <strong>Notice:</strong> No platform administrator account found. Initialize an admin by running <code>python manage_admin.py create</code> or set <code>ADMIN_EMAIL</code> and <code>ADMIN_PASSWORD</code> in <code>backend/.env</code>.
+            </div>
+          )}
 
           {isRegister && (
             <label>
@@ -247,36 +315,66 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }) {
   );
 }
 
-function AdminDashboard({ user, onLogout, onNavigate }) {
+function AdminDashboard({
+  user,
+  currentPath,
+  activeSection = "dashboard",
+  onLogout,
+  onNavigate,
+  apiUrl,
+  token,
+  showToast,
+}) {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetchMetrics = () => {
+    const authToken = token || getToken();
+    if (!authToken) return;
+    setLoading(true);
+    setError(null);
+    axios
+      .get(`${apiUrl || API_URL}/api/admin/metrics`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      })
+      .then((res) => {
+        setMetrics(res.data);
+        setError(null);
+      })
+      .catch((err) => {
+        console.error("Admin metrics fetch error:", err);
+        const detail = err?.response?.data?.detail;
+        if (err?.response?.status === 403) {
+          setError(detail || "Admin access required. You do not possess administrator permissions.");
+        } else if (err?.response?.status === 401) {
+          setError("Session expired or unauthorized. Please sign in again.");
+        } else {
+          setError("Failed to load administrator metrics. Server error occurred.");
+        }
+      })
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-    axios
-      .get(`${API_URL}/api/admin/metrics`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .then((res) => setMetrics(res.data))
-      .catch((err) => console.error("Admin metrics fetch error:", err))
-      .finally(() => setLoading(false));
-  }, []);
+    if (activeSection === "dashboard") {
+      fetchMetrics();
+    }
+  }, [activeSection]);
 
   const adminSections = [
-    ["01", "Dashboard", "Overview and activity"],
-    ["02", "Users", "Accounts and access"],
-    ["03", "Performance", "Scores and progress"],
-    ["04", "Courses", "Learning content"],
-    ["05", "Learning Paths", "Career journeys"],
-    ["06", "Tests", "Assessments"],
-    ["07", "Questions", "Question bank"],
-    ["08", "Badges", "Achievements"],
-    ["09", "Reports", "Platform insights"],
+    { number: "01", id: "dashboard", title: "Dashboard", description: "Overview and activity", path: "/admin/dashboard" },
+    { number: "02", id: "users", title: "Users", description: "Accounts and access", path: "/admin/users" },
+    { number: "03", id: "performance", title: "Performance", description: "Scores and progress", path: "/admin/performance" },
+    { number: "04", id: "courses", title: "Courses", description: "Learning content", path: "/admin/courses" },
+    { number: "05", id: "learning-paths", title: "Learning Paths", description: "Career journeys", path: "/admin/learning-paths" },
+    { number: "06", id: "tests", title: "Tests", description: "Assessments", path: "/admin/tests" },
+    { number: "07", id: "questions", title: "Questions", description: "Question bank", path: "/admin/questions" },
+    { number: "08", id: "badges", title: "Badges", description: "Achievements", path: "/admin/badges" },
+    { number: "09", id: "reports", title: "Reports", description: "Platform insights", path: "/admin/reports" },
   ];
 
-  const stats = metrics?.stats || {};
-  const recentActivities = metrics?.recent_activities || [];
+  const currentSectionMeta = adminSections.find((s) => s.id === activeSection) || adminSections[0];
 
   return (
     <div className="admin-dashboard">
@@ -286,12 +384,25 @@ function AdminDashboard({ user, onLogout, onNavigate }) {
           <div><strong>ResumeAI</strong><span>Admin workspace</span></div>
         </div>
         <nav className="admin-nav">
-          {adminSections.map(([number, title, description], index) => (
-            <button className={`admin-nav-item ${index === 0 ? "selected" : ""}`} key={title} type="button">
-              <span>{number}</span>
-              <div><strong>{title}</strong><small>{description}</small></div>
-            </button>
-          ))}
+          {adminSections.map((item) => {
+            const isSelected =
+              activeSection === item.id ||
+              (item.id === "dashboard" && (currentPath === "/admin" || currentPath === "/admin/dashboard"));
+            return (
+              <button
+                className={`admin-nav-item ${isSelected ? "selected" : ""}`}
+                key={item.id}
+                type="button"
+                onClick={() => onNavigate(item.path)}
+              >
+                <span>{item.number}</span>
+                <div>
+                  <strong>{item.title}</strong>
+                  <small>{item.description}</small>
+                </div>
+              </button>
+            );
+          })}
         </nav>
         <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
           <button
@@ -309,9 +420,17 @@ function AdminDashboard({ user, onLogout, onNavigate }) {
       <main className="admin-main">
         <header className="admin-header">
           <div>
-            <span className="eyebrow">CONTROL CENTER</span>
-            <h1>Good morning, {user.full_name.split(" ")[0]}.</h1>
-            <p>Platform status and aggregated learning & resume analytics.</p>
+            <span className="eyebrow">CONTROL CENTER / {currentSectionMeta.title.toUpperCase()}</span>
+            <h1>
+              {activeSection === "dashboard"
+                ? `Good morning, ${user.full_name.split(" ")[0]}.`
+                : currentSectionMeta.title}
+            </h1>
+            <p>
+              {activeSection === "dashboard"
+                ? "Platform status and aggregated learning & resume analytics."
+                : currentSectionMeta.description}
+            </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <button
@@ -332,75 +451,79 @@ function AdminDashboard({ user, onLogout, onNavigate }) {
           </div>
         </header>
 
-        <section className="admin-stat-grid">
-          <div className="admin-stat">
-            <span>Total users</span>
-            <strong>{stats.total_users ?? "..."}</strong>
-            <small>{stats.active_users ?? 0} Active accounts</small>
-          </div>
-          <div className="admin-stat">
-            <span>Total courses</span>
-            <strong>{stats.total_courses ?? 10}</strong>
-            <small>Content modules active</small>
-          </div>
-          <div className="admin-stat">
-            <span>Total tests</span>
-            <strong>{stats.total_tests ?? 10}</strong>
-            <small>Assessment quizzes</small>
-          </div>
-          <div className="admin-stat accent">
-            <span>Total analyses</span>
-            <strong>{stats.total_analyses ?? 0}</strong>
-            <small>Resumes analyzed</small>
-          </div>
-        </section>
-
-        <section className="admin-overview-grid">
-          <div className="admin-panel">
-            <div className="panel-heading">
-              <div>
-                <span className="section-kicker">PERFORMANCE OVERVIEW</span>
-                <h2>Platform health</h2>
-              </div>
-              <span className="panel-period">All time</span>
-            </div>
-            <div className="health-list">
-              <div><span>Average ATS score</span><strong>{stats.avg_ats_score ? `${stats.avg_ats_score}%` : "85%"}</strong></div>
-              <div><span>Average test score</span><strong>{stats.avg_quiz_score ? `${stats.avg_quiz_score}%` : "78%"}</strong></div>
-              <div><span>Course completion rate</span><strong>{stats.course_completion_rate ? `${stats.course_completion_rate}%` : "64%"}</strong></div>
-              <div><span>Active enrollments</span><strong>{stats.total_enrollments ?? 0}</strong></div>
-            </div>
-          </div>
-
-          <div className="admin-panel activity-panel">
-            <div className="panel-heading">
-              <div>
-                <span className="section-kicker">RECENT ACTIVITY</span>
-                <h2>Latest platform events</h2>
-              </div>
-            </div>
-            {recentActivities.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "12px" }}>
-                {recentActivities.map((act, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      padding: "8px 12px",
-                      background: "rgba(255,255,255,0.03)",
-                      borderRadius: "6px",
-                      border: "1px solid rgba(255,255,255,0.06)",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, fontSize: "0.85rem", color: "#f8fafc" }}>{act.title}</div>
-                    <div style={{ fontSize: "0.78rem", color: "#94a3b8" }}>{act.description}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-activity">Platform live and monitoring resume analysis & quiz submissions.</div>
-            )}
-          </div>
-        </section>
+        {activeSection === "dashboard" && (
+          <AdminDashboardOverview
+            metrics={metrics}
+            loading={loading}
+            error={error}
+            onRetry={fetchMetrics}
+            onNavigate={onNavigate}
+          />
+        )}
+        {activeSection === "users" && (
+          <AdminUsersView
+            apiUrl={apiUrl || API_URL}
+            token={token || getToken()}
+            showToast={showToast}
+            onNavigate={onNavigate}
+          />
+        )}
+        {activeSection === "performance" && (
+          <AdminPerformanceView
+            apiUrl={apiUrl || API_URL}
+            token={token || getToken()}
+            showToast={showToast}
+            onNavigate={onNavigate}
+          />
+        )}
+        {activeSection === "courses" && (
+          <AdminCoursesView
+            apiUrl={apiUrl || API_URL}
+            token={token || getToken()}
+            showToast={showToast}
+            onNavigate={onNavigate}
+          />
+        )}
+        {activeSection === "learning-paths" && (
+          <AdminLearningPathsView
+            apiUrl={apiUrl || API_URL}
+            token={token || getToken()}
+            showToast={showToast}
+            onNavigate={onNavigate}
+          />
+        )}
+        {activeSection === "tests" && (
+          <AdminTestsView
+            apiUrl={apiUrl || API_URL}
+            token={token || getToken()}
+            showToast={showToast}
+            onNavigate={onNavigate}
+          />
+        )}
+        {activeSection === "questions" && (
+          <AdminQuestionsView
+            apiUrl={apiUrl || API_URL}
+            token={token || getToken()}
+            showToast={showToast}
+            onNavigate={onNavigate}
+          />
+        )}
+        {activeSection === "badges" && (
+          <AdminBadgesView
+            apiUrl={apiUrl || API_URL}
+            token={token || getToken()}
+            showToast={showToast}
+            onNavigate={onNavigate}
+          />
+        )}
+        {activeSection === "reports" && (
+          <AdminReportsView
+            apiUrl={apiUrl || API_URL}
+            token={token || getToken()}
+            showToast={showToast}
+            onNavigate={onNavigate}
+          />
+        )}
       </main>
     </div>
   );
@@ -540,14 +663,27 @@ function App() {
     );
   }
 
-  // If non-admin attempts to access /admin routes, redirect to user dashboard
+  // If non-admin attempts to access /admin routes, redirect to user dashboard with informative toast
   if (user.role !== "admin" && currentPath.startsWith("/admin")) {
+    showToast("Admin access required. Please sign in with an administrator account.", "error");
     navigate("/dashboard");
     return null;
   }
 
   if (user.role === "admin" && currentPath.startsWith("/admin")) {
-    return <AdminDashboard user={user} onLogout={logout} onNavigate={navigate} />;
+    const adminRoute = parseRoute(currentPath);
+    return (
+      <AdminDashboard
+        user={user}
+        currentPath={currentPath}
+        activeSection={adminRoute.section || "dashboard"}
+        onLogout={logout}
+        onNavigate={navigate}
+        apiUrl={API_URL}
+        token={getToken()}
+        showToast={showToast}
+      />
+    );
   }
 
   // Parse Route for main authenticated platform

@@ -13,7 +13,9 @@ from schemas import (
     EmailVerifyRequest,
     PhoneSendOtpRequest,
     PhoneVerifyOtpRequest,
+    AdminInitRequest,
 )
+from services.admin_service import has_any_admin, create_or_update_admin
 from services.email_service import generate_verification_token, send_verification_email
 from services.sms_service import (
     generate_otp,
@@ -84,6 +86,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             detail="Invalid email or password.",
         )
 
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated. Please contact support.",
+        )
+
     token = create_access_token(user.id, user.role)
     return {"access_token": token, "token_type": "bearer", "user": user_response(user)}
 
@@ -99,14 +107,58 @@ def admin_login(payload: LoginRequest, db: Session = Depends(get_db)):
             detail="Invalid email or password.",
         )
 
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator account is deactivated.",
+        )
+
     if user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required.",
+            detail="Admin access required. This account does not possess administrator privileges.",
         )
 
     token = create_access_token(user.id, user.role)
     return {"access_token": token, "token_type": "bearer", "user": user_response(user)}
+
+
+@router.get("/admin/status")
+def get_admin_status(db: Session = Depends(get_db)):
+    """
+    Returns platform administrator status without exposing sensitive credentials.
+    Used by the frontend to advise whether an admin account has been provisioned.
+    """
+    return {
+        "has_admin": has_any_admin(db),
+    }
+
+
+@router.post("/admin/init-first-admin", status_code=status.HTTP_201_CREATED)
+def init_first_admin(payload: AdminInitRequest, db: Session = Depends(get_db)):
+    """
+    Protected one-time setup endpoint to initialize the first platform administrator.
+    Permanently locked (returns 403 Forbidden) once ANY active administrator account exists.
+    """
+    if has_any_admin(db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin initialization is locked: an administrator account already exists. Please use the CLI tool or contact an existing administrator.",
+        )
+
+    user = create_or_update_admin(
+        db=db,
+        email=payload.email,
+        password=payload.password,
+        full_name=payload.full_name,
+    )
+    token = create_access_token(user.id, user.role)
+    return {
+        "message": "First platform administrator initialized successfully.",
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user_response(user),
+    }
 
 
 @router.get("/me")
